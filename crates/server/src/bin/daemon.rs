@@ -570,7 +570,7 @@ async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
 
 fn random_nonce_b64url(len: usize) -> String {
     let mut buf = vec![0u8; len];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill_bytes(&mut buf);
     encode_url_nopad(&buf)
 }
 
@@ -1137,7 +1137,10 @@ mod tests {
         let router = test_router(state.clone());
 
         // Generate key and write allow-list
-        let signing = SigningKey::generate(&mut rand_core::OsRng);
+        // Generate random bytes for the signing key (avoids rand_core version mismatch)
+        let mut seed = [0u8; 32];
+        rand::Fill::fill(&mut seed, &mut rand::rng());
+        let signing = SigningKey::from_bytes(&seed);
         let (key_id, _verifying) = write_openssh_pubkey(tmp.path(), &signing);
 
         // 1) /connect
