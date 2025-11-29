@@ -28,7 +28,7 @@ inquire = { workspace = true }
 which = "6"
 toml = { workspace = true }
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = "0.29"
 
 [dev-dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }
