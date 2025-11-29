@@ -1,0 +1,122 @@
+# Test server - simplified for integration testing
+# No certbot (we test HTTP only), minimal deps
+
+FROM rust:1.85-bookworm AS builder
+WORKDIR /app
+COPY . .
+RUN cargo fetch
+RUN cargo build -r -p kickflip-server && cargo build -r -p kickflip-server --bin daemon
+
+FROM debian:bookworm-slim
+
+# Install only what we need for testing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates nginx openssh-server curl inotify-tools \
+  && rm -rf /var/lib/apt/lists/*
+
+# Create kickflip user
+RUN useradd -m -s /bin/bash kickflip \
+  && mkdir -p /home/kickflip/.ssh \
+  && chmod 700 /home/kickflip/.ssh \
+  && touch /home/kickflip/.ssh/authorized_keys \
+  && chmod 600 /home/kickflip/.ssh/authorized_keys \
+  && chown -R kickflip:kickflip /home/kickflip/.ssh
+
+# Create directories
+RUN mkdir -p /etc/kickflip/clients.d \
+    /etc/nginx/sites-available \
+    /etc/nginx/sites-enabled \
+    /var/www/letsencrypt/.well-known/acme-challenge \
+    /var/log/nginx \
+    /run/sshd \
+  && chmod 777 /etc/kickflip/clients.d
+
+# Configure SSH
+RUN echo "\n\
+Match User kickflip\n\
+    AllowTcpForwarding yes\n\
+    X11Forwarding no\n\
+    PermitTTY no\n\
+    AllowAgentForwarding no\n\
+    PermitOpen any\n\
+    ForceCommand /bin/echo 'SSH tunneling only'" >> /etc/ssh/sshd_config
+
+# Generate SSH host keys
+RUN ssh-keygen -A
+
+# Configure nginx to include sites-enabled
+RUN echo 'include /etc/nginx/sites-enabled/*.conf;' > /etc/nginx/conf.d/sites.conf
+
+# Copy binaries
+COPY --from=builder /app/target/release/kickflip-server /usr/local/bin/
+COPY --from=builder /app/target/release/daemon /usr/local/bin/
+
+# Entrypoint script
+RUN cat > /entrypoint.sh << 'SCRIPT'
+#!/bin/bash
+set -e
+
+echo "[test-server] Starting..."
+
+# Load config
+CONFIG="${KICKFLIP_SERVER_CONFIG:-/etc/kickflip/kickflip-server.toml}"
+CLIENTS_DIR="${KICKFLIP_CLIENTS_DIR:-/etc/kickflip/clients.d}"
+
+# Ensure clients dir is writable (for shared volume with test-runner)
+mkdir -p "$CLIENTS_DIR"
+chmod 777 "$CLIENTS_DIR"
+
+# Sync authorized_keys
+sync_keys() {
+    AUTH_KEYS="/home/kickflip/.ssh/authorized_keys"
+    if [ -d "$CLIENTS_DIR" ]; then
+        cat "$CLIENTS_DIR"/*.pub 2>/dev/null | grep -v '^#' | grep -v '^$' > "$AUTH_KEYS.tmp" || true
+        if [ -s "$AUTH_KEYS.tmp" ]; then
+            mv "$AUTH_KEYS.tmp" "$AUTH_KEYS"
+            chmod 600 "$AUTH_KEYS"
+            chown kickflip:kickflip "$AUTH_KEYS"
+            echo "[test-server] Synced $(wc -l < "$AUTH_KEYS") keys"
+        else
+            rm -f "$AUTH_KEYS.tmp"
+        fi
+    fi
+}
+
+sync_keys
+
+# Start SSH
+echo "[test-server] Starting sshd..."
+/usr/sbin/sshd
+
+# Start nginx
+echo "[test-server] Starting nginx..."
+nginx
+
+# Watch for key changes in background
+(
+    while true; do
+        inotifywait -q -e modify,create,delete,move "$CLIENTS_DIR" 2>/dev/null || sleep 2
+        sync_keys
+    done
+) &
+
+# Run daemon directly in foreground (not via kickflip-server start which backgrounds it)
+echo "[test-server] Starting kickflip daemon in foreground..."
+exec daemon \
+    --clients-dir "$CLIENTS_DIR" \
+    --nginx-available /etc/nginx/sites-available \
+    --nginx-enabled /etc/nginx/sites-enabled \
+    --rp-id test.local \
+    --acme-webroot /var/www/letsencrypt \
+    --auto-cert false \
+    --tls-enable false \
+    --http-redirect false \
+    --bind 0.0.0.0:8080
+SCRIPT
+
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 22 80 8080
+
+ENTRYPOINT ["/entrypoint.sh"]
+

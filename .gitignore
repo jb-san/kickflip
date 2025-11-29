@@ -1,0 +1,30 @@
+# Rust
+/target/
+/Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime files
+*.log
+.env
+.env.local
+
+# Kickflip specific
+/state.toml
+/nginx_configs/
+.kickflip.toml
+
+# Dist
+/dist/
+/tmp/

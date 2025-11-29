@@ -1,0 +1,99 @@
+# Kickflip Server - Docker Compose
+#
+# See QUICKSTART.md for full setup instructions including DNS configuration.
+#
+# Quick usage:
+#   1. Create config directory: mkdir -p config/clients.d
+#   2. Create config/kickflip-server.toml (see example below)
+#   3. Run: docker compose up -d
+#   4. Add clients: docker compose exec kickflip kickflip-server add-client --pubkey "ssh-ed25519 ..." --name "my-laptop"
+
+services:
+  kickflip:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    # Or use pre-built image:
+    # image: ghcr.io/yourorg/kickflip-server:latest
+    container_name: kickflip-server
+    restart: unless-stopped
+    
+    # Network mode: host is required for:
+    # - nginx to bind to ports 80/443
+    # - SSH port forwarding to work correctly
+    # - Reverse tunnels to be accessible
+    network_mode: host
+    
+    environment:
+      # Path to config file inside container
+      KICKFLIP_SERVER_CONFIG: /etc/kickflip/kickflip-server.toml
+      # Clients directory (for authorized_keys sync)
+      KICKFLIP_CLIENTS_DIR: /etc/kickflip/clients.d
+    
+    volumes:
+      # Configuration and client keys (REQUIRED)
+      # Create this directory with:
+      #   mkdir -p config/clients.d
+      #   touch config/kickflip-server.toml
+      - ./config:/etc/kickflip
+      
+      # SSL certificates (Let's Encrypt) - persisted
+      - letsencrypt:/etc/letsencrypt
+      
+      # Nginx configuration (managed by kickflip daemon)
+      - nginx-sites:/etc/nginx/sites-available
+      - nginx-enabled:/etc/nginx/sites-enabled
+      
+      # ACME challenge webroot for Let's Encrypt
+      - acme-webroot:/var/www/letsencrypt
+    
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  letsencrypt:
+    name: kickflip-letsencrypt
+  nginx-sites:
+    name: kickflip-nginx-sites
+  nginx-enabled:
+    name: kickflip-nginx-enabled
+  acme-webroot:
+    name: kickflip-acme-webroot
+
+# =============================================================================
+# Example config/kickflip-server.toml:
+# =============================================================================
+#
+# # Your base domain - clients connect to <subdomain>.<rp_id>
+# rp_id = "t.example.com"
+#
+# # Where to store allowed client public keys
+# clients_dir = "/etc/kickflip/clients.d"
+#
+# # Unix socket for CLI communication
+# socket = "/tmp/kickflip.sock"
+#
+# # Nginx configuration directories
+# nginx_available = "/etc/nginx/sites-available"
+# nginx_enabled = "/etc/nginx/sites-enabled"
+#
+# # Let's Encrypt / ACME settings
+# acme_webroot = "/var/www/letsencrypt"
+# acme_email = "admin@example.com"  # Required for cert notifications
+# auto_cert = true                   # Auto-obtain certs on first connect
+#
+# # TLS settings
+# tls_enable = true      # Enable HTTPS
+# tls_cert = ""          # Leave empty for auto Let's Encrypt
+# tls_key = ""           # Leave empty for auto Let's Encrypt
+# http_redirect = true   # Redirect HTTP to HTTPS
+# hsts_enable = false    # Enable HSTS header
+# hsts_max_age = 31536000
+#
+# # SSH settings
+# ssh_user = "kickflip"
+# authorized_keys = "/home/kickflip/.ssh/authorized_keys"

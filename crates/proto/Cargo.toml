@@ -1,0 +1,17 @@
+[package]
+name = "kickflip-proto"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Shared protocol models and helpers for kickflip"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+
+[lints]
+workspace = true

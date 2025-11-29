@@ -1,0 +1,20 @@
+# Test server configuration
+# HTTP only, no SSL (testing in isolated network)
+
+rp_id = "test.local"
+clients_dir = "/etc/kickflip/clients.d"
+socket = "/tmp/kickflip.sock"
+nginx_available = "/etc/nginx/sites-available"
+nginx_enabled = "/etc/nginx/sites-enabled"
+acme_webroot = "/var/www/letsencrypt"
+acme_email = ""
+auto_cert = false
+tls_enable = false
+tls_cert = ""
+tls_key = ""
+http_redirect = false
+hsts_enable = false
+hsts_max_age = 31536000
+ssh_user = "kickflip"
+authorized_keys = "/home/kickflip/.ssh/authorized_keys"
+

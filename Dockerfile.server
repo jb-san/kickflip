@@ -1,0 +1,109 @@
+# syntax=docker/dockerfile:1
+
+# Build stage
+FROM rust:1.85-bookworm AS builder
+WORKDIR /app
+COPY . .
+# Faster incremental deps caching
+RUN cargo fetch
+RUN cargo build -r -p kickflip-server && cargo build -r -p kickflip-server --bin daemon
+
+# Runtime stage (Debian slim)
+FROM debian:bookworm-slim
+
+# Install runtime deps: nginx, openssh-server, certbot, and curl for healthchecks
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates nginx openssh-server certbot curl inotify-tools \
+  && rm -rf /var/lib/apt/lists/*
+
+# Create kickflip user for SSH tunnels
+RUN useradd -m -s /bin/bash kickflip \
+  && mkdir -p /home/kickflip/.ssh \
+  && chmod 700 /home/kickflip/.ssh \
+  && touch /home/kickflip/.ssh/authorized_keys \
+  && chmod 600 /home/kickflip/.ssh/authorized_keys \
+  && chown -R kickflip:kickflip /home/kickflip/.ssh
+
+# Create necessary directories
+RUN mkdir -p /etc/kickflip/clients.d \
+    /etc/nginx/sites-available \
+    /etc/nginx/sites-enabled \
+    /var/www/letsencrypt/.well-known/acme-challenge \
+    /var/log/nginx \
+    /run/sshd
+
+# Configure SSH for tunneling only (restrict shell access)
+RUN echo "\n\
+Match User kickflip\n\
+    AllowTcpForwarding yes\n\
+    X11Forwarding no\n\
+    PermitTTY no\n\
+    AllowAgentForwarding no\n\
+    PermitOpen any\n\
+    ForceCommand /bin/echo 'SSH tunneling only - no shell access'" >> /etc/ssh/sshd_config
+
+# Ensure nginx includes sites-enabled
+RUN if ! grep -q "sites-enabled" /etc/nginx/nginx.conf; then \
+    sed -i '/http {/a \    include /etc/nginx/sites-enabled/*.conf;' /etc/nginx/nginx.conf; \
+    fi
+
+# Copy binaries
+COPY --from=builder /app/target/release/kickflip-server /usr/local/bin/kickflip-server
+COPY --from=builder /app/target/release/daemon /usr/local/bin/daemon
+
+# Create entrypoint script
+RUN cat > /entrypoint.sh << 'SCRIPT'
+#!/bin/bash
+set -e
+
+# Function to sync authorized_keys from clients.d
+sync_keys() {
+    CLIENTS_DIR="${KICKFLIP_CLIENTS_DIR:-/etc/kickflip/clients.d}"
+    AUTH_KEYS="/home/kickflip/.ssh/authorized_keys"
+    
+    # Combine all .pub files into authorized_keys
+    if [ -d "$CLIENTS_DIR" ]; then
+        cat "$CLIENTS_DIR"/*.pub 2>/dev/null | grep -v '^#' | grep -v '^$' > "$AUTH_KEYS.tmp" || true
+        if [ -s "$AUTH_KEYS.tmp" ]; then
+            mv "$AUTH_KEYS.tmp" "$AUTH_KEYS"
+            chmod 600 "$AUTH_KEYS"
+            chown kickflip:kickflip "$AUTH_KEYS"
+            echo "[entrypoint] Synced $(wc -l < "$AUTH_KEYS") keys to authorized_keys"
+        else
+            rm -f "$AUTH_KEYS.tmp"
+            echo "[entrypoint] No client keys found in $CLIENTS_DIR"
+        fi
+    fi
+}
+
+# Initial key sync
+sync_keys
+
+# Start SSH daemon
+echo "[entrypoint] Starting SSH daemon..."
+/usr/sbin/sshd
+
+# Start nginx
+echo "[entrypoint] Starting nginx..."
+nginx
+
+# Background watcher to sync keys when clients.d changes
+(
+    CLIENTS_DIR="${KICKFLIP_CLIENTS_DIR:-/etc/kickflip/clients.d}"
+    while true; do
+        inotifywait -q -e modify,create,delete,move "$CLIENTS_DIR" 2>/dev/null || sleep 5
+        sync_keys
+    done
+) &
+
+# Start kickflip daemon
+echo "[entrypoint] Starting kickflip server..."
+exec kickflip-server start
+SCRIPT
+
+RUN chmod +x /entrypoint.sh
+
+# Expose ports: HTTP, HTTPS, API, SSH
+EXPOSE 22 80 443 8080
+
+ENTRYPOINT ["/entrypoint.sh"]

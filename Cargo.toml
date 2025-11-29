@@ -1,0 +1,57 @@
+[workspace]
+resolver = "2"
+members = [ "crates/client", "crates/server", "crates/proto"
+    # "crates/kickflip-proto",
+    # "crates/kickflip-server",
+    # "crates/kickflip-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Jonathan <jonathan@x3m.io>"]
+license = "GNU GPLv3"
+repository = "https://github.com/jb-san/kickflip"
+homepage = "https://github.com/jb-san/kickflip"
+description = "Self-hosted ngrok alternative"
+
+[workspace.dependencies]
+# Shared dependencies with versions
+serde = { version = "1.0", features = ["derive"] }
+home = "0.5.11"
+serde_json = "1.0.143"
+
+toml = "0.9.5"
+thiserror = "2.0.16"
+# anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
+inquire = "0.7.5"
+# tracing = "0.1"
+# tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# tokio = { version = "1.0", features = ["full"] }
+# axum = "0.7"
+# rustls = "0.21"
+# tera = "1.19"
+# ratatui = "0.24"
+# ed25519-dalek = { version = "1.0", features = ["rand"] }
+# rand = "0.7"
+# dirs = "5.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+enum_glob_use = "deny"
+pedantic = "warn"
+nursery = "warn"
+unwrap_used = "deny"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = "z"
+
+[profile.dev]
+debug = true

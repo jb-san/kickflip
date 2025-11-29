@@ -1,0 +1,31 @@
+# Test runner - contains client and test utilities
+
+FROM rust:1.85-bookworm AS builder
+WORKDIR /app
+COPY . .
+RUN cargo fetch
+RUN cargo build -r -p kickflip-client
+
+FROM debian:bookworm-slim
+
+# Install test utilities
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl openssh-client python3 jq netcat-openbsd \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy client binary
+COPY --from=builder /app/target/release/kickflip-client /usr/local/bin/
+
+# Create test user and generate SSH key
+RUN useradd -m -s /bin/bash testuser \
+  && mkdir -p /home/testuser/.ssh \
+  && chmod 700 /home/testuser/.ssh \
+  && ssh-keygen -t ed25519 -f /home/testuser/.ssh/kickflip -N "" -C "test@kickflip" \
+  && chown -R testuser:testuser /home/testuser/.ssh
+
+# Run as testuser
+USER testuser
+WORKDIR /home/testuser
+
+ENTRYPOINT ["/bin/bash"]
+

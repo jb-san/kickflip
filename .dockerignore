@@ -1,0 +1,33 @@
+# Build artifacts
+target/
+dist/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Documentation (not needed in build)
+*.md
+!README.md
+LICENSE
+
+# Local config
+config/
+*.toml
+!Cargo.toml
+!rustfmt.toml
+
+# Scripts
+scripts/
+
+# Docker files (prevent recursion)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
