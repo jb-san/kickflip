@@ -103,7 +103,7 @@ jobs:
                   sha256sum kickflip-${{ needs.version.outputs.version }}-${{ matrix.target }}.tar.gz > kickflip-${{ needs.version.outputs.version }}-${{ matrix.target }}.tar.gz.sha256
 
             - name: Upload artifacts
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v5
               with:
                   name: kickflip-${{ matrix.target }}
                   path: |
