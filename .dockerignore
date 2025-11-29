@@ -19,8 +19,10 @@ LICENSE
 
 # Local config
 config/
-*.toml
+
+# Keep Cargo files for reproducible builds
 !Cargo.toml
+!Cargo.lock
 !rustfmt.toml
 
 # Scripts

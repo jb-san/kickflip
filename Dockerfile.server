@@ -1,12 +1,10 @@
 # syntax=docker/dockerfile:1
 
 # Build stage
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.90-bookworm AS builder
 WORKDIR /app
 COPY . .
-# Faster incremental deps caching
-RUN cargo fetch
-RUN cargo build -r -p kickflip-server && cargo build -r -p kickflip-server --bin daemon
+RUN cargo build --release --locked -p kickflip-server && cargo build --release --locked -p kickflip-server --bin daemon
 
 # Runtime stage (Debian slim)
 FROM debian:bookworm-slim

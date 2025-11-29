@@ -18,7 +18,7 @@ description = "Self-hosted ngrok alternative"
 [workspace.dependencies]
 # Shared dependencies with versions
 serde = { version = "1.0", features = ["derive"] }
-home = "0.5.11"
+home = "0.5"
 serde_json = "1.0.143"
 
 toml = "0.9.5"
