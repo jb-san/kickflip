@@ -94,9 +94,47 @@ nginx
     done
 ) &
 
-# Start kickflip daemon
-echo "[entrypoint] Starting kickflip server..."
-exec kickflip-server start
+# Start kickflip daemon directly (not via kickflip-server start which backgrounds)
+echo "[entrypoint] Starting kickflip daemon..."
+
+# Load config if present
+CONFIG="${KICKFLIP_SERVER_CONFIG:-/etc/kickflip/kickflip-server.toml}"
+CLIENTS_DIR="${KICKFLIP_CLIENTS_DIR:-/etc/kickflip/clients.d}"
+
+# Build daemon args from config file or use defaults
+DAEMON_ARGS="--clients-dir $CLIENTS_DIR"
+DAEMON_ARGS="$DAEMON_ARGS --nginx-available /etc/nginx/sites-available"
+DAEMON_ARGS="$DAEMON_ARGS --nginx-enabled /etc/nginx/sites-enabled"
+DAEMON_ARGS="$DAEMON_ARGS --acme-webroot /var/www/letsencrypt"
+DAEMON_ARGS="$DAEMON_ARGS --bind 0.0.0.0:8080"
+
+# Read config values if config file exists
+if [ -f "$CONFIG" ]; then
+    echo "[entrypoint] Loading config from $CONFIG"
+    
+    # Extract values from TOML (simple parsing)
+    get_config() {
+        grep "^$1" "$CONFIG" 2>/dev/null | sed 's/.*= *"\?\([^"]*\)"\?.*/\1/' | head -1
+    }
+    
+    RP_ID=$(get_config "rp_id")
+    ACME_EMAIL=$(get_config "acme_email")
+    AUTO_CERT=$(get_config "auto_cert")
+    TLS_ENABLE=$(get_config "tls_enable")
+    HTTP_REDIRECT=$(get_config "http_redirect")
+    
+    [ -n "$RP_ID" ] && DAEMON_ARGS="$DAEMON_ARGS --rp-id $RP_ID"
+    [ -n "$ACME_EMAIL" ] && DAEMON_ARGS="$DAEMON_ARGS --acme-email $ACME_EMAIL"
+    [ "$AUTO_CERT" = "true" ] && DAEMON_ARGS="$DAEMON_ARGS --auto-cert true" || DAEMON_ARGS="$DAEMON_ARGS --auto-cert false"
+    [ "$TLS_ENABLE" = "true" ] && DAEMON_ARGS="$DAEMON_ARGS --tls-enable true" || DAEMON_ARGS="$DAEMON_ARGS --tls-enable false"
+    [ "$HTTP_REDIRECT" = "true" ] && DAEMON_ARGS="$DAEMON_ARGS --http-redirect true" || DAEMON_ARGS="$DAEMON_ARGS --http-redirect false"
+else
+    echo "[entrypoint] No config file found at $CONFIG, using defaults"
+    DAEMON_ARGS="$DAEMON_ARGS --rp-id localhost --auto-cert false --tls-enable false"
+fi
+
+echo "[entrypoint] Starting: daemon $DAEMON_ARGS"
+exec daemon $DAEMON_ARGS
 SCRIPT
 
 RUN chmod +x /entrypoint.sh
