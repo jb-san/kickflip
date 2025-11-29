@@ -1077,7 +1077,7 @@ dependencies = [
 
 [[package]]
 name = "kickflip-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "clap",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "kickflip-proto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "serde",
@@ -1104,7 +1104,7 @@ dependencies = [
 
 [[package]]
 name = "kickflip-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "base64",
