@@ -570,7 +570,7 @@ async fn health_handler(State(state): State<AppState>) -> Json<HealthResponse> {
 
 fn random_nonce_b64url(len: usize) -> String {
     let mut buf = vec![0u8; len];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill_bytes(&mut buf);
     encode_url_nopad(&buf)
 }
 

@@ -16,20 +16,21 @@ Based on [Roll your own Ngrok with Nginx, Letsencrypt, and SSH reverse tunnellin
 
 ### Prerequisites
 
-- A server with ports 80 and 443 open
-- A domain with wildcard DNS: `*.tunnels.yourdomain.com` → your server IP
+- A server with ports 22, 80, and 443 open
+- A domain with wildcard DNS pointing to your server:
+  - `tunnels.yourdomain.com` → your server IP (A record)
+  - `*.tunnels.yourdomain.com` → your server IP (A record or CNAME to above)
 
 ### 1. On the server
 
 ```bash
-# Clone and configure
-git clone https://github.com/jb-san/kickflip.git
-cd kickflip
+# Download docker-compose file
+curl -O https://raw.githubusercontent.com/jb-san/kickflip/main/docker-compose.yml
 
 # Create config directory
-mkdir -p config
+mkdir -p config/clients.d
 
-# Create config file
+# Create config file (edit values for your domain)
 cat > config/kickflip-server.toml << 'EOF'
 rp_id = "tunnels.yourdomain.com"
 clients_dir = "/etc/kickflip/clients.d"
@@ -38,11 +39,11 @@ auto_cert = true
 tls_enable = true
 EOF
 
-# Build and start
-docker-compose up -d
+# Start the server
+docker compose up -d
 
 # Check status
-docker-compose exec kickflip kickflip-server status
+docker compose exec kickflip kickflip-server status
 ```
 
 ### 2. On the client
@@ -59,7 +60,7 @@ kickflip-client get-pub-key
 ### 3. On the server - add the client
 
 ```bash
-docker-compose exec kickflip kickflip-server add-client \
+docker compose exec kickflip kickflip-server add-client \
   --pubkey "ssh-ed25519 AAAA... user@host" \
   --name "my-laptop"
 ```
