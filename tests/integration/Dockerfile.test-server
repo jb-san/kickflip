@@ -1,7 +1,7 @@
 # Test server - simplified for integration testing
 # No certbot (we test HTTP only), minimal deps
 
-FROM rust:1.90-bookworm AS builder
+FROM rust:bookworm AS builder
 WORKDIR /app
 COPY . .
 RUN cargo build --release --locked -p kickflip-server && cargo build --release --locked -p kickflip-server --bin daemon

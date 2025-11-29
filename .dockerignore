@@ -25,6 +25,9 @@ config/
 !Cargo.lock
 !rustfmt.toml
 
+# Prevent rust-toolchain.toml from overriding Docker image's Rust version
+rust-toolchain.toml
+
 # Scripts
 scripts/
 

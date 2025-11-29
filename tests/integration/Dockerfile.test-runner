@@ -1,6 +1,6 @@
 # Test runner - contains client and test utilities
 
-FROM rust:1.90-bookworm AS builder
+FROM rust:bookworm AS builder
 WORKDIR /app
 COPY . .
 RUN cargo build --release --locked -p kickflip-client
