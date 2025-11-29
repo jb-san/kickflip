@@ -19,7 +19,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 kickflip-proto = { path = "../proto" }
 uuid = { version = "1.10", features = ["v4"] }
-rand = "0.8"
+rand = "0.9"
 chrono = { version = "0.4", features = ["serde", "clock"] }
 base64 = "0.22"
 sha2 = "0.10"
