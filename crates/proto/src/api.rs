@@ -1,7 +1,7 @@
 use crate::types::KeyId;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectRequest {
     pub subdomain: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -12,7 +12,7 @@ pub struct ConnectRequest {
     pub key_id: KeyId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectResponse {
     pub challenge_id: String,
     pub reverse_port: u16,
@@ -20,7 +20,7 @@ pub struct ConnectResponse {
     pub challenge: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AuthRequest {
     pub challenge_id: String,
     pub key_id: KeyId,
@@ -28,20 +28,20 @@ pub struct AuthRequest {
     pub signature: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AuthResponse {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DisconnectRequest {
     pub subdomain: String,
     pub key_id: KeyId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DisconnectResponse {
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -32,6 +32,7 @@ fn default_ssh_user() -> String {
     "kickflip".to_string()
 }
 
+#[allow(dead_code)]
 impl Config {
     /// Create a new config with default values
     pub fn new() -> Self {
@@ -105,12 +106,14 @@ impl Config {
     }
 }
 
-/// Global config loading functions using unwrap_or_default
+/// Global config loading functions using `unwrap_or_default`
+#[allow(dead_code)]
 pub fn load_config() -> Config {
     Config::load() // This already uses unwrap_or_default internally
 }
 
 /// Load config with environment variable fallbacks
+#[allow(dead_code)]
 pub fn load_config_with_env() -> Config {
     let mut config = Config::load();
 

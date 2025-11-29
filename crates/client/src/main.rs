@@ -168,7 +168,11 @@ fn main() {
             };
 
             println!("🔗 Connecting to {}", cfg.server_url);
-            println!("   Subdomain: {}.{}", subdomain, extract_domain(&cfg.server_url));
+            println!(
+                "   Subdomain: {}.{}",
+                subdomain,
+                extract_domain(&cfg.server_url)
+            );
             println!("   Local port: {}", local_port);
 
             if let Err(e) = networking::connect(
@@ -187,7 +191,10 @@ fn main() {
 
             // First, try to notify server using saved connection info
             if let Some(conn_info) = networking::load_connection_info() {
-                println!("   Notifying server about subdomain: {}", conn_info.subdomain);
+                println!(
+                    "   Notifying server about subdomain: {}",
+                    conn_info.subdomain
+                );
                 if let Err(e) = networking::disconnect(&conn_info.server_url, &conn_info.subdomain)
                 {
                     eprintln!("   Warning: could not notify server: {}", e);
@@ -235,7 +242,10 @@ fn find_and_kill_tunnels() -> Result<usize, std::io::Error> {
     use std::process::Command;
 
     // Use pgrep to find SSH processes, then filter by kickflip key
-    let output = Command::new("pgrep").arg("-f").arg("ssh.*kickflip").output();
+    let output = Command::new("pgrep")
+        .arg("-f")
+        .arg("ssh.*kickflip")
+        .output();
 
     match output {
         Ok(out) if out.status.success() => {

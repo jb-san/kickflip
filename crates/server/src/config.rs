@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ServerConfig {
     pub rp_id: String,
     pub clients_dir: PathBuf,
@@ -44,7 +45,7 @@ impl Default for ServerConfig {
             tls_key: String::new(),
             http_redirect: true,
             hsts_enable: false,
-            hsts_max_age: 31536000,
+            hsts_max_age: 31_536_000,
             ssh_user: "kickflip".into(),
             authorized_keys: PathBuf::from("/home/kickflip/.ssh/authorized_keys"),
         }

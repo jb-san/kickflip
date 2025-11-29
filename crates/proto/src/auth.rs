@@ -14,6 +14,7 @@ pub struct Challenge {
 }
 
 impl Challenge {
+    #[must_use]
     pub fn to_canonical_string(&self) -> String {
         format!(
             "{version}\nrpId: {rp}\nsubdomain: {sd}\nreverse_port: {rpv}\nlocal_port: {lp}\nnonce: {nonce}\nissued_at: {iat}\nexpires_at: {eat}",
@@ -28,6 +29,7 @@ impl Challenge {
         )
     }
 
+    #[must_use]
     pub fn to_base64url(&self) -> String {
         encode_url_nopad(self.to_canonical_string().as_bytes())
     }
@@ -52,8 +54,8 @@ mod tests {
         let expected = "kickflip-auth-v1\nrpId: example.com\nsubdomain: app\nreverse_port: 3333\nlocal_port: 3000\nnonce: abcDEF123-\nissued_at: 2025-09-20T12:34:56Z\nexpires_at: 2025-09-20T12:35:56Z";
         assert_eq!(s, expected);
         let b64 = c.to_base64url();
-        assert!(!b64.contains("+"));
-        assert!(!b64.contains("/"));
-        assert!(!b64.contains("="));
+        assert!(!b64.contains('+'));
+        assert!(!b64.contains('/'));
+        assert!(!b64.contains('='));
     }
 }

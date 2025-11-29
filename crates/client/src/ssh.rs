@@ -247,9 +247,9 @@ pub fn derive_key_id() -> Result<String, std::io::Error> {
         ));
     }
 
-    let b64 = parts.next().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing key data")
-    })?;
+    let b64 = parts
+        .next()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing key data"))?;
 
     // Decode the blob and compute SHA256 fingerprint
     let blob = base64::engine::general_purpose::STANDARD

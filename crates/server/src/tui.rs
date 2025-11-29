@@ -327,7 +327,7 @@ fn run_app<B: ratatui::backend::Backend>(
                         KeyCode::Char('r') => app.refresh(),
                         KeyCode::Char('1') => app.current_tab = Tab::Dashboard,
                         KeyCode::Char('2') => app.current_tab = Tab::Clients,
-                        KeyCode::Char('3') | KeyCode::Char('?') => app.current_tab = Tab::Help,
+                        KeyCode::Char('3' | '?') => app.current_tab = Tab::Help,
                         _ => {}
                     }
                 }
@@ -506,9 +506,11 @@ fn render_clients(f: &mut Frame, app: &App, area: Rect) {
 
     // Show empty state
     if app.clients.is_empty() {
-        let empty = Paragraph::new("No clients registered\n\nUse: kickflip-server add-client --pubkey \"...\"")
-            .style(Style::default().fg(Color::DarkGray))
-            .centered();
+        let empty = Paragraph::new(
+            "No clients registered\n\nUse: kickflip-server add-client --pubkey \"...\"",
+        )
+        .style(Style::default().fg(Color::DarkGray))
+        .centered();
         let inner = centered_rect(60, 20, area);
         f.render_widget(Clear, inner);
         f.render_widget(empty, inner);
@@ -517,9 +519,10 @@ fn render_clients(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_help(f: &mut Frame, area: Rect) {
     let help_text = vec![
-        Line::from(vec![
-            Span::styled("Keyboard Shortcuts", Style::default().bold().fg(Color::Cyan)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Keyboard Shortcuts",
+            Style::default().bold().fg(Color::Cyan),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("Tab / → / ←  ", Style::default().fg(Color::Yellow)),
@@ -542,28 +545,33 @@ fn render_help(f: &mut Frame, area: Rect) {
             Span::raw("Quit"),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Auto-refresh", Style::default().bold().fg(Color::Cyan)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Auto-refresh",
+            Style::default().bold().fg(Color::Cyan),
+        )]),
         Line::from("Data refreshes automatically every 5 seconds."),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("CLI Commands", Style::default().bold().fg(Color::Cyan)),
-        ]),
+        Line::from(vec![Span::styled(
+            "CLI Commands",
+            Style::default().bold().fg(Color::Cyan),
+        )]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("kickflip-server add-client --pubkey \"...\"", Style::default().fg(Color::Green)),
-        ]),
+        Line::from(vec![Span::styled(
+            "kickflip-server add-client --pubkey \"...\"",
+            Style::default().fg(Color::Green),
+        )]),
         Line::from("  Add a new client"),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("kickflip-server remove-client --key-id \"SHA256:...\"", Style::default().fg(Color::Green)),
-        ]),
+        Line::from(vec![Span::styled(
+            "kickflip-server remove-client --key-id \"SHA256:...\"",
+            Style::default().fg(Color::Green),
+        )]),
         Line::from("  Remove a client"),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("kickflip-server status", Style::default().fg(Color::Green)),
-        ]),
+        Line::from(vec![Span::styled(
+            "kickflip-server status",
+            Style::default().fg(Color::Green),
+        )]),
         Line::from("  Show daemon status"),
     ];
 
@@ -610,4 +618,3 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         ])
         .split(popup_layout[1])[1]
 }
-

@@ -66,7 +66,7 @@ pub fn connect(
     };
 
     let response = client
-        .post(&format!("{}/connect", server_url))
+        .post(format!("{server_url}/connect"))
         .json(&req)
         .send()?;
 
@@ -82,18 +82,16 @@ pub fn connect(
                 signature,
             };
             let response = client
-                .post(&format!("{}/auth", server_url))
+                .post(format!("{server_url}/auth"))
                 .json(&auth_req)
                 .send()?;
             match response.status() {
                 StatusCode::OK => {
                     let auth = response.json::<AuthResponse>()?;
                     if !auth.ok {
-                        return Err(format!(
-                            "Auth failed: {}",
-                            auth.message.unwrap_or_default()
-                        )
-                        .into());
+                        return Err(
+                            format!("Auth failed: {}", auth.message.unwrap_or_default()).into()
+                        );
                     }
                     println!("✅ Authenticated successfully");
 
@@ -105,19 +103,31 @@ pub fn connect(
                         local_port,
                     };
                     if let Err(e) = save_connection_info(&conn_info) {
-                        eprintln!("Warning: could not save connection info: {}", e);
+                        eprintln!("Warning: could not save connection info: {e}");
                     }
 
                     // Open reverse SSH tunnel
-                    let server_host = extract_host(server_url).unwrap_or("localhost".to_string());
-                    ssh::open_reverse_tunnel(&server_host, resp.reverse_port, local_port, ssh_user)?;
+                    let server_host =
+                        extract_host(server_url).unwrap_or_else(|| "localhost".to_string());
+                    ssh::open_reverse_tunnel(
+                        &server_host,
+                        resp.reverse_port,
+                        local_port,
+                        ssh_user,
+                    )?;
                     Ok(())
                 }
-                _ => Err(Box::new(response.error_for_status().unwrap_err())),
+                _ => Err(response
+                    .error_for_status()
+                    .expect_err("status was not OK")
+                    .into()),
             }
         }
         StatusCode::CONFLICT => Err("Subdomain already connected".into()),
-        _ => Err(Box::new(response.error_for_status().unwrap_err())),
+        _ => Err(response
+            .error_for_status()
+            .expect_err("status was not OK")
+            .into()),
     }
 }
 
@@ -132,7 +142,7 @@ pub fn disconnect(server_url: &str, subdomain: &str) -> Result<(), Box<dyn std::
     };
 
     let response = client
-        .post(&format!("{}/disconnect", server_url))
+        .post(format!("{server_url}/disconnect"))
         .json(&req)
         .send()?;
 
@@ -143,11 +153,7 @@ pub fn disconnect(server_url: &str, subdomain: &str) -> Result<(), Box<dyn std::
                 clear_connection_info();
                 Ok(())
             } else {
-                Err(format!(
-                    "Disconnect failed: {}",
-                    resp.message.unwrap_or_default()
-                )
-                .into())
+                Err(format!("Disconnect failed: {}", resp.message.unwrap_or_default()).into())
             }
         }
         StatusCode::NOT_FOUND => {
@@ -155,7 +161,10 @@ pub fn disconnect(server_url: &str, subdomain: &str) -> Result<(), Box<dyn std::
             clear_connection_info();
             Ok(())
         }
-        _ => Err(Box::new(response.error_for_status().unwrap_err())),
+        _ => Err(response
+            .error_for_status()
+            .expect_err("status was not OK")
+            .into()),
     }
 }
 

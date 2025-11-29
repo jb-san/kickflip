@@ -18,7 +18,7 @@ use tokio::net::UnixListener;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -436,7 +436,12 @@ async fn auth_handler(
             ) {
                 tracing::error!("subdomain setup error: {}", e);
                 // Release the port back to pool on failure
-                state.inner.port_pool.lock().unwrap().release(pending.reverse_port);
+                state
+                    .inner
+                    .port_pool
+                    .lock()
+                    .unwrap()
+                    .release(pending.reverse_port);
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(AuthResponse {
@@ -624,9 +629,8 @@ fn verify_signature_for_key_id(
                         verify_ed25519_signature(&pubkey, signature_b64url, canonical.as_bytes())
                     {
                         return Ok(ok);
-                    } else {
-                        return Ok(false);
                     }
+                    return Ok(false);
                 }
             }
         }
@@ -778,7 +782,9 @@ async fn control_loop(listener: UnixListener, shutdown_tx: mpsc::Sender<()>, sta
             }
             _ => {
                 socket
-                    .write_all(b"Unknown command. Available: status, connections, reload, shutdown\n")
+                    .write_all(
+                        b"Unknown command. Available: status, connections, reload, shutdown\n",
+                    )
                     .await
                     .unwrap();
                 info!(
@@ -863,7 +869,7 @@ fn write_http_only_nginx_config(
 
     let server_name = format!("{}.{}", subdomain, rp_id);
     let contents = format!(
-        r#"# Temporary config for ACME challenge
+        r"# Temporary config for ACME challenge
 server {{
     server_name {server_name};
     listen 80;
@@ -876,7 +882,7 @@ server {{
         return 503;
     }}
 }}
-"#,
+",
         server_name = server_name,
         webroot = acme_webroot.display(),
     );
@@ -945,7 +951,13 @@ fn setup_subdomain(
         );
 
         // Step 1: Write HTTP-only config for ACME challenge
-        write_http_only_nginx_config(nginx_available, nginx_enabled, acme_webroot, subdomain, rp_id)?;
+        write_http_only_nginx_config(
+            nginx_available,
+            nginx_enabled,
+            acme_webroot,
+            subdomain,
+            rp_id,
+        )?;
 
         // Step 2: Obtain certificate
         obtain_cert(subdomain, rp_id, acme_webroot, acme_email)?;
@@ -1068,7 +1080,6 @@ mod tests {
     use super::*;
     use axum::body::to_bytes;
     use axum::http::StatusCode as HttpStatus;
-    use axum::routing::RouterIntoService;
     use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
     use tempfile::tempdir;
     use tower::ServiceExt; // for `oneshot`
@@ -1117,7 +1128,7 @@ mod tests {
                 auto_cert: false, // Disable auto-cert in tests
                 http_redirect: false,
                 hsts_enable: false,
-                hsts_max_age: 31536000,
+                hsts_max_age: 31_536_000,
                 challenges: Mutex::new(HashMap::new()),
                 connections: Mutex::new(HashMap::new()),
                 port_pool: Mutex::new(PortPool::new(DEFAULT_REVERSE_PORT_START)),

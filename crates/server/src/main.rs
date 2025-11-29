@@ -381,6 +381,7 @@ fn sanitize_filename(s: &str) -> String {
 }
 
 struct ParsedSshEd25519Key {
+    #[allow(dead_code)]
     blob: Vec<u8>,
 }
 
@@ -503,7 +504,7 @@ fn run_configure() -> ServerConfig {
         tls_key: String::new(),
         http_redirect: want_https,
         hsts_enable: false,
-        hsts_max_age: 31536000,
+        hsts_max_age: 31_536_000,
         ssh_user: std::env::var("USER").unwrap_or_else(|_| "root".into()),
         authorized_keys: std::env::var_os("HOME")
             .map(|h| std::path::PathBuf::from(h).join(".ssh/authorized_keys"))
