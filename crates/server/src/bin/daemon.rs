@@ -331,11 +331,19 @@ fn is_port_listening(port: u16) -> bool {
 
 /// Cleanup stale connections where the SSH tunnel is no longer active
 async fn cleanup_stale_connections(state: &AppState) {
-    // Get list of connections to check
+    // Grace period: don't check connections created less than 60 seconds ago
+    const GRACE_PERIOD_SECS: i64 = 60;
+    let now = Utc::now();
+
+    // Get list of connections to check (skip recently created ones)
     let connections: Vec<(String, u16)> = {
         let conns = state.inner.connections.lock().unwrap();
         conns
             .iter()
+            .filter(|(_, conn)| {
+                // Only check connections older than grace period
+                (now - conn.connected_at).num_seconds() > GRACE_PERIOD_SECS
+            })
             .map(|(subdomain, conn)| (subdomain.clone(), conn.reverse_port))
             .collect()
     };
