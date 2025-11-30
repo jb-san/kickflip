@@ -43,8 +43,29 @@ Match User kickflip\n\
 # Generate SSH host keys
 RUN ssh-keygen -A
 
-# Configure nginx to include sites-enabled
+# Configure nginx to include sites-enabled and add fallback config
 RUN echo 'include /etc/nginx/sites-enabled/*.conf;' > /etc/nginx/conf.d/sites.conf
+RUN rm -f /etc/nginx/sites-enabled/default
+RUN cat > /etc/nginx/sites-available/kickflip-root.conf << 'NGINX'
+server {
+    listen 80 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+NGINX
+RUN ln -sf /etc/nginx/sites-available/kickflip-root.conf /etc/nginx/sites-enabled/kickflip-root.conf
 
 # Copy binaries
 COPY --from=builder /app/target/release/kickflip-server /usr/local/bin/

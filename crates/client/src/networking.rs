@@ -52,6 +52,7 @@ pub fn connect(
     remote_port: u16,
     local_port: u16,
     ssh_user: &str,
+    ssh_port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
 
@@ -109,13 +110,31 @@ pub fn connect(
                     // Open reverse SSH tunnel
                     let server_host =
                         extract_host(server_url).unwrap_or_else(|| "localhost".to_string());
-                    ssh::open_reverse_tunnel(
+                    let tunnel_result = ssh::open_reverse_tunnel(
                         &server_host,
+                        ssh_port,
                         resp.reverse_port,
                         local_port,
                         ssh_user,
-                    )?;
-                    Ok(())
+                    );
+
+                    // Always try to disconnect from server when tunnel closes
+                    println!("🔌 Notifying server of disconnect...");
+                    if let Err(e) = disconnect(server_url, subdomain) {
+                        eprintln!("Warning: failed to notify server: {}", e);
+                    } else {
+                        println!("✅ Disconnected from server");
+                    }
+
+                    // Return the tunnel result
+                    match tunnel_result {
+                        Ok(()) => Ok(()),
+                        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                            // User pressed Ctrl+C, graceful shutdown
+                            Ok(())
+                        }
+                        Err(e) => Err(e.into()),
+                    }
                 }
                 _ => Err(response
                     .error_for_status()
