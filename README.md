@@ -91,7 +91,7 @@ kickflip-client get-pub-key
 
 ```bash
 docker compose exec kickflip kickflip-server add-client \
-  --pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHJlP5973NOhXrpInGtqAHzDn2lquBWs59pOFGaep8gk jb@Cortex-2.local" \
+  --pubkey "ssh-ed25519 AAAAC3NzaC1lZ..." \
   --name "my-laptop"
 ```
 
