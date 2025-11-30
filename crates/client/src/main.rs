@@ -168,9 +168,13 @@ fn main() {
             local_port,
         }) => {
             let cfg = config::Config::load();
-            // Protocol is only used for display/nginx config, not SSH port
-            // SSH reverse port is auto-allocated by server (33000+)
-            let _ = protocol; // Used by server for nginx config via subdomain request
+            // Convert protocol enum to string for server
+            // Format: "http", "https", or "port:NNNN" for custom ports
+            let protocol_str = match &protocol {
+                Protocol::Http => "http".to_string(),
+                Protocol::Https => "https".to_string(),
+                Protocol::Port(p) => format!("port:{}", p),
+            };
 
             println!("🔗 Connecting to {}", cfg.server_url);
             println!(
@@ -178,13 +182,14 @@ fn main() {
                 subdomain,
                 extract_domain(&cfg.server_url)
             );
+            println!("   Protocol: {}", protocol);
             println!("   Local port: {}", local_port);
 
             // remote_port = 0 means server will auto-allocate a high port
             if let Err(e) = networking::connect(
                 &cfg.server_url,
                 &subdomain,
-                0, // Let server auto-allocate reverse port
+                &protocol_str,
                 local_port,
                 &cfg.ssh_user,
                 cfg.ssh_port,

@@ -119,6 +119,7 @@ struct PendingChallenge {
     key_id: String,
     challenge: Challenge,
     subdomain: String,
+    protocol: String, // "http", "https", or "port:NNNN"
     reverse_port: u16,
     expires_at: Instant,
 }
@@ -434,10 +435,12 @@ async fn connect_handler(
     let expires_at_instant = Instant::now() + Duration::from_secs(CHALLENGE_TTL_SECS);
 
     // Store pending challenge (includes local_port for connection tracking)
+    let protocol = req.protocol.clone().unwrap_or_else(|| "http".to_string());
     let pending = PendingChallenge {
         key_id: req.key_id.0.clone(),
         challenge: challenge.clone(),
         subdomain: req.subdomain,
+        protocol,
         reverse_port,
         expires_at: expires_at_instant,
     };
@@ -504,21 +507,24 @@ async fn auth_handler(
     ) {
         Ok(true) => {
             // Setup nginx config and SSL cert if needed
+            // Only get SSL cert if protocol is "https"
+            let wants_ssl = pending.protocol == "https";
             if let Err(e) = setup_subdomain(
                 &state.inner.nginx_available,
                 &state.inner.nginx_enabled,
                 &state.inner.acme_webroot,
                 &state.inner.acme_email,
-                state.inner.tls_enable,
-                state.inner.auto_cert,
-                state.inner.http_redirect,
-                state.inner.hsts_enable,
+                state.inner.tls_enable && wants_ssl,
+                state.inner.auto_cert && wants_ssl,
+                state.inner.http_redirect && wants_ssl,
+                state.inner.hsts_enable && wants_ssl,
                 state.inner.hsts_max_age,
                 &state.inner.tls_cert,
                 &state.inner.tls_key,
                 &pending.subdomain,
                 pending.reverse_port,
                 &state.inner.rp_id,
+                &pending.protocol,
             ) {
                 tracing::error!("subdomain setup error: {}", e);
                 // Release the port back to pool on failure
@@ -1028,7 +1034,17 @@ fn setup_subdomain(
     subdomain: &str,
     reverse_port: u16,
     rp_id: &str,
+    protocol: &str,
 ) -> Result<(), String> {
+    // Parse protocol to get listen port (for custom port support)
+    let listen_port: u16 = if let Some(port_str) = protocol.strip_prefix("port:") {
+        port_str.parse().unwrap_or(80)
+    } else if protocol == "https" {
+        443
+    } else {
+        80
+    };
+
     // If TLS is enabled and we should auto-obtain certs
     if tls_enable && auto_cert && !cert_exists(subdomain, rp_id, tls_cert) {
         info!(
@@ -1063,6 +1079,7 @@ fn setup_subdomain(
         subdomain,
         reverse_port,
         rp_id,
+        listen_port,
     )
 }
 
@@ -1286,6 +1303,7 @@ fn write_root_nginx_config(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_nginx_config(
     available: &Path,
     enabled: &Path,
@@ -1299,6 +1317,7 @@ fn write_nginx_config(
     subdomain: &str,
     reverse_port: u16,
     rp_id: &str,
+    listen_port: u16,
 ) -> Result<(), String> {
     // Paths
     std::fs::create_dir_all(available).map_err(|e| format!("mkdir avail: {}", e))?;
@@ -1350,9 +1369,11 @@ fn write_nginx_config(
         )
     };
 
+    // For non-TLS: use the specified listen_port (80, or custom port like 8080)
     let http_block_plain = format!(
-        "server {{\n    server_name {server_name};\n    listen 80;\n\n    access_log /var/log/nginx/$host;\n\n    location / {{\n        proxy_pass http://127.0.0.1:{reverse_port}/;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto http;\n        proxy_redirect off;\n    }}\n}}\n",
+        "server {{\n    server_name {server_name};\n    listen {listen_port};\n\n    access_log /var/log/nginx/$host;\n\n    location / {{\n        proxy_pass http://127.0.0.1:{reverse_port}/;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto http;\n        proxy_redirect off;\n    }}\n}}\n",
         server_name = server_name,
+        listen_port = listen_port,
         reverse_port = reverse_port,
     );
 

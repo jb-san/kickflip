@@ -49,7 +49,7 @@ fn clear_connection_info() {
 pub fn connect(
     server_url: &str,
     subdomain: &str,
-    remote_port: u16,
+    protocol: &str,
     local_port: u16,
     ssh_user: &str,
     ssh_port: u16,
@@ -60,8 +60,8 @@ pub fn connect(
 
     let req = ConnectRequest {
         subdomain: subdomain.to_string(),
-        protocol: None,
-        remote_port: Some(remote_port),
+        protocol: Some(protocol.to_string()),
+        remote_port: None, // Let server auto-allocate
         local_port,
         key_id: KeyId(key_id_str.clone()),
     };
