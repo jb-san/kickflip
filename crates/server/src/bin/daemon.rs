@@ -18,7 +18,7 @@ use tokio::net::UnixListener;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -119,6 +119,7 @@ struct PendingChallenge {
     key_id: String,
     challenge: Challenge,
     subdomain: String,
+    protocol: String, // "http", "https", or "port:NNNN"
     reverse_port: u16,
     expires_at: Instant,
 }
@@ -222,12 +223,45 @@ async fn main() {
         }),
     };
 
+    // Setup SSL for root domain if auto_cert is enabled
+    if args.auto_cert && args.tls_enable {
+        info!("Setting up SSL for root domain: {}", args.rp_id);
+        if let Err(e) = setup_root_domain_ssl(
+            &args.nginx_available,
+            &args.nginx_enabled,
+            &args.acme_webroot,
+            &args.acme_email,
+            &args.rp_id,
+            &args.tls_cert,
+            &args.tls_key,
+            args.http_redirect,
+            args.hsts_enable,
+            args.hsts_max_age,
+        ) {
+            warn!(
+                "Failed to setup root domain SSL: {} (API will still work on HTTP)",
+                e
+            );
+        } else {
+            info!("Root domain SSL configured successfully");
+        }
+    }
+
     // Spawn purge task for challenges
     let purge_state = state.clone();
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(5)).await;
             purge_expired_challenges(&purge_state);
+        }
+    });
+
+    // Spawn connection health check task (checks if SSH tunnels are still active)
+    let health_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(30)).await;
+            cleanup_stale_connections(&health_state).await;
         }
     });
 
@@ -281,6 +315,59 @@ async fn main() {
         info!("Cleaned up Unix socket {:?}", socket_path);
     }
     info!("Daemon stopped");
+}
+
+/// Check if a port is listening (used to detect if SSH tunnel is still active)
+fn is_port_listening(port: u16) -> bool {
+    use std::net::TcpStream;
+    use std::time::Duration as StdDuration;
+
+    TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        StdDuration::from_millis(500),
+    )
+    .is_ok()
+}
+
+/// Cleanup stale connections where the SSH tunnel is no longer active
+async fn cleanup_stale_connections(state: &AppState) {
+    // Get list of connections to check
+    let connections: Vec<(String, u16)> = {
+        let conns = state.inner.connections.lock().unwrap();
+        conns
+            .iter()
+            .map(|(subdomain, conn)| (subdomain.clone(), conn.reverse_port))
+            .collect()
+    };
+
+    // Check each connection
+    for (subdomain, port) in connections {
+        if !is_port_listening(port) {
+            info!(
+                "Detected stale connection: {} (port {} not listening), cleaning up",
+                subdomain, port
+            );
+
+            // Remove from connections
+            {
+                let mut conns = state.inner.connections.lock().unwrap();
+                conns.remove(&subdomain);
+            }
+
+            // Release port back to pool
+            {
+                let mut pool = state.inner.port_pool.lock().unwrap();
+                pool.release(port);
+            }
+
+            // Remove nginx config
+            let _ = remove_nginx_config(
+                &state.inner.nginx_available,
+                &state.inner.nginx_enabled,
+                &subdomain,
+            );
+        }
+    }
 }
 
 fn purge_expired_challenges(state: &AppState) {
@@ -348,10 +435,12 @@ async fn connect_handler(
     let expires_at_instant = Instant::now() + Duration::from_secs(CHALLENGE_TTL_SECS);
 
     // Store pending challenge (includes local_port for connection tracking)
+    let protocol = req.protocol.clone().unwrap_or_else(|| "http".to_string());
     let pending = PendingChallenge {
         key_id: req.key_id.0.clone(),
         challenge: challenge.clone(),
         subdomain: req.subdomain,
+        protocol,
         reverse_port,
         expires_at: expires_at_instant,
     };
@@ -418,21 +507,24 @@ async fn auth_handler(
     ) {
         Ok(true) => {
             // Setup nginx config and SSL cert if needed
+            // Only get SSL cert if protocol is "https"
+            let wants_ssl = pending.protocol == "https";
             if let Err(e) = setup_subdomain(
                 &state.inner.nginx_available,
                 &state.inner.nginx_enabled,
                 &state.inner.acme_webroot,
                 &state.inner.acme_email,
-                state.inner.tls_enable,
-                state.inner.auto_cert,
-                state.inner.http_redirect,
-                state.inner.hsts_enable,
+                state.inner.tls_enable && wants_ssl,
+                state.inner.auto_cert && wants_ssl,
+                state.inner.http_redirect && wants_ssl,
+                state.inner.hsts_enable && wants_ssl,
                 state.inner.hsts_max_age,
                 &state.inner.tls_cert,
                 &state.inner.tls_key,
                 &pending.subdomain,
                 pending.reverse_port,
                 &state.inner.rp_id,
+                &pending.protocol,
             ) {
                 tracing::error!("subdomain setup error: {}", e);
                 // Release the port back to pool on failure
@@ -942,7 +1034,17 @@ fn setup_subdomain(
     subdomain: &str,
     reverse_port: u16,
     rp_id: &str,
+    protocol: &str,
 ) -> Result<(), String> {
+    // Parse protocol to get listen port (for custom port support)
+    let listen_port: u16 = if let Some(port_str) = protocol.strip_prefix("port:") {
+        port_str.parse().unwrap_or(80)
+    } else if protocol == "https" {
+        443
+    } else {
+        80
+    };
+
     // If TLS is enabled and we should auto-obtain certs
     if tls_enable && auto_cert && !cert_exists(subdomain, rp_id, tls_cert) {
         info!(
@@ -977,9 +1079,231 @@ fn setup_subdomain(
         subdomain,
         reverse_port,
         rp_id,
+        listen_port,
     )
 }
 
+/// Setup SSL and nginx for the root domain (API endpoint)
+#[allow(clippy::too_many_arguments)]
+fn setup_root_domain_ssl(
+    nginx_available: &Path,
+    nginx_enabled: &Path,
+    acme_webroot: &Path,
+    acme_email: &str,
+    rp_id: &str,
+    tls_cert: &str,
+    tls_key: &str,
+    http_redirect: bool,
+    hsts_enable: bool,
+    hsts_max_age: u32,
+) -> Result<(), String> {
+    let effective_cert = if tls_cert.is_empty() {
+        format!("/etc/letsencrypt/live/{}/fullchain.pem", rp_id)
+    } else {
+        tls_cert.to_string()
+    };
+
+    // Check if cert already exists
+    if !Path::new(&effective_cert).exists() {
+        info!("Obtaining SSL certificate for root domain {}...", rp_id);
+
+        // Write temporary HTTP-only config for ACME challenge
+        write_root_http_config(nginx_available, nginx_enabled, acme_webroot, rp_id)?;
+        reload_nginx()?;
+
+        // Obtain certificate
+        let status = std::process::Command::new("certbot")
+            .arg("certonly")
+            .arg("--webroot")
+            .arg("-w")
+            .arg(acme_webroot)
+            .arg("-d")
+            .arg(rp_id)
+            .arg("--non-interactive")
+            .arg("--agree-tos")
+            .arg("--email")
+            .arg(acme_email)
+            .status()
+            .map_err(|e| format!("certbot exec: {}", e))?;
+
+        if !status.success() {
+            return Err(format!(
+                "certbot failed with exit code: {:?}",
+                status.code()
+            ));
+        }
+        info!("SSL certificate obtained for {}", rp_id);
+    }
+
+    // Write full nginx config with HTTPS
+    write_root_nginx_config(
+        nginx_available,
+        nginx_enabled,
+        acme_webroot,
+        rp_id,
+        &effective_cert,
+        &if tls_key.is_empty() {
+            format!("/etc/letsencrypt/live/{}/privkey.pem", rp_id)
+        } else {
+            tls_key.to_string()
+        },
+        http_redirect,
+        hsts_enable,
+        hsts_max_age,
+    )?;
+    reload_nginx()
+}
+
+/// Write HTTP-only nginx config for root domain (for ACME challenge)
+fn write_root_http_config(
+    available: &Path,
+    enabled: &Path,
+    acme_webroot: &Path,
+    rp_id: &str,
+) -> Result<(), String> {
+    std::fs::create_dir_all(available).map_err(|e| format!("mkdir: {}", e))?;
+    std::fs::create_dir_all(enabled).map_err(|e| format!("mkdir: {}", e))?;
+
+    let config = format!(
+        r#"server {{
+    listen 80;
+    server_name {rp_id};
+
+    location /.well-known/acme-challenge/ {{
+        root {acme_webroot};
+    }}
+
+    location / {{
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }}
+}}
+"#,
+        rp_id = rp_id,
+        acme_webroot = acme_webroot.display(),
+    );
+
+    let avail_path = available.join("kickflip-root.conf");
+    let enabled_path = enabled.join("kickflip-root.conf");
+
+    std::fs::write(&avail_path, &config).map_err(|e| format!("write config: {}", e))?;
+
+    if enabled_path.exists() {
+        std::fs::remove_file(&enabled_path).ok();
+    }
+    std::os::unix::fs::symlink(&avail_path, &enabled_path)
+        .map_err(|e| format!("symlink: {}", e))?;
+
+    Ok(())
+}
+
+/// Write full nginx config for root domain with HTTPS
+#[allow(clippy::too_many_arguments)]
+fn write_root_nginx_config(
+    available: &Path,
+    enabled: &Path,
+    acme_webroot: &Path,
+    rp_id: &str,
+    tls_cert: &str,
+    tls_key: &str,
+    http_redirect: bool,
+    hsts_enable: bool,
+    hsts_max_age: u32,
+) -> Result<(), String> {
+    let mut https_block = format!(
+        r#"server {{
+    listen 443 ssl;
+    server_name {rp_id};
+
+    ssl_certificate {tls_cert};
+    ssl_certificate_key {tls_key};
+
+    location / {{
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }}
+"#,
+        rp_id = rp_id,
+        tls_cert = tls_cert,
+        tls_key = tls_key,
+    );
+
+    if hsts_enable {
+        https_block.push_str(&format!(
+            "    add_header Strict-Transport-Security \"max-age={}; includeSubDomains\" always;\n",
+            hsts_max_age
+        ));
+    }
+    https_block.push_str("}\n");
+
+    let http_block = if http_redirect {
+        format!(
+            r#"server {{
+    listen 80;
+    server_name {rp_id};
+
+    location /.well-known/acme-challenge/ {{
+        root {acme_webroot};
+    }}
+
+    location / {{
+        return 301 https://$host$request_uri;
+    }}
+}}
+"#,
+            rp_id = rp_id,
+            acme_webroot = acme_webroot.display(),
+        )
+    } else {
+        format!(
+            r#"server {{
+    listen 80;
+    server_name {rp_id};
+
+    location /.well-known/acme-challenge/ {{
+        root {acme_webroot};
+    }}
+
+    location / {{
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+    }}
+}}
+"#,
+            rp_id = rp_id,
+            acme_webroot = acme_webroot.display(),
+        )
+    };
+
+    let config = format!("{}\n{}", https_block, http_block);
+
+    let avail_path = available.join("kickflip-root.conf");
+    let enabled_path = enabled.join("kickflip-root.conf");
+
+    std::fs::write(&avail_path, &config).map_err(|e| format!("write config: {}", e))?;
+
+    if enabled_path.exists() {
+        std::fs::remove_file(&enabled_path).ok();
+    }
+    std::os::unix::fs::symlink(&avail_path, &enabled_path)
+        .map_err(|e| format!("symlink: {}", e))?;
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn write_nginx_config(
     available: &Path,
     enabled: &Path,
@@ -993,6 +1317,7 @@ fn write_nginx_config(
     subdomain: &str,
     reverse_port: u16,
     rp_id: &str,
+    listen_port: u16,
 ) -> Result<(), String> {
     // Paths
     std::fs::create_dir_all(available).map_err(|e| format!("mkdir avail: {}", e))?;
@@ -1044,9 +1369,11 @@ fn write_nginx_config(
         )
     };
 
+    // For non-TLS: use the specified listen_port (80, or custom port like 8080)
     let http_block_plain = format!(
-        "server {{\n    server_name {server_name};\n    listen 80;\n\n    access_log /var/log/nginx/$host;\n\n    location / {{\n        proxy_pass http://127.0.0.1:{reverse_port}/;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto http;\n        proxy_redirect off;\n    }}\n}}\n",
+        "server {{\n    server_name {server_name};\n    listen {listen_port};\n\n    access_log /var/log/nginx/$host;\n\n    location / {{\n        proxy_pass http://127.0.0.1:{reverse_port}/;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto http;\n        proxy_redirect off;\n    }}\n}}\n",
         server_name = server_name,
+        listen_port = listen_port,
         reverse_port = reverse_port,
     );
 

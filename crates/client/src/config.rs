@@ -13,6 +13,8 @@ pub struct Config {
     pub server_url: String,
     #[serde(default = "default_ssh_user")]
     pub ssh_user: String,
+    #[serde(default = "default_ssh_port")]
+    pub ssh_port: u16,
 }
 
 impl Default for Config {
@@ -20,6 +22,7 @@ impl Default for Config {
         Self {
             server_url: default_server_url(),
             ssh_user: default_ssh_user(),
+            ssh_port: default_ssh_port(),
         }
     }
 }
@@ -30,6 +33,10 @@ fn default_server_url() -> String {
 
 fn default_ssh_user() -> String {
     "kickflip".to_string()
+}
+
+fn default_ssh_port() -> u16 {
+    2222 // Container's SSH port (avoids conflict with host's port 22)
 }
 
 #[allow(dead_code)]
@@ -102,6 +109,11 @@ impl Config {
 
     pub fn with_ssh_user(mut self, user: String) -> Self {
         self.ssh_user = user;
+        self
+    }
+
+    pub fn with_ssh_port(mut self, port: u16) -> Self {
+        self.ssh_port = port;
         self
     }
 }

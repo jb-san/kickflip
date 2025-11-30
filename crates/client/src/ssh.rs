@@ -265,22 +265,29 @@ pub fn derive_key_id() -> Result<String, std::io::Error> {
     Ok(format!("SHA256:{}", fingerprint))
 }
 
-/// Open a reverse SSH tunnel
+/// Open a reverse SSH tunnel (blocks until tunnel closes or Ctrl+C)
 pub fn open_reverse_tunnel(
     server_host: &str,
+    ssh_port: u16,
     reverse_port: u16,
     local_port: u16,
     ssh_user: &str,
 ) -> Result<(), std::io::Error> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
     let key_path = kickflip_key_path();
 
     println!(
-        "Opening tunnel: localhost:{} -> {}@{}:{}",
-        local_port, ssh_user, server_host, reverse_port
+        "Opening tunnel: localhost:{} -> {}@{}:{} (ssh port {})",
+        local_port, ssh_user, server_host, reverse_port, ssh_port
     );
+    println!("Press Ctrl+C to disconnect...");
 
-    let status = Command::new("ssh")
+    let mut child = Command::new("ssh")
         .arg("-N")
+        .arg("-p")
+        .arg(ssh_port.to_string())
         .arg("-i")
         .arg(&key_path)
         .arg("-o")
@@ -294,16 +301,48 @@ pub fn open_reverse_tunnel(
         .arg("-R")
         .arg(format!("{}:127.0.0.1:{}", reverse_port, local_port))
         .arg(format!("{}@{}", ssh_user, server_host))
-        .status()?;
+        .spawn()?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("SSH tunnel exited with code: {:?}", status.code()),
-        ))
+    // Set up Ctrl+C handler
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .expect("Error setting Ctrl+C handler");
+
+    // Wait for SSH to exit or Ctrl+C
+    while running.load(Ordering::SeqCst) {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    return Ok(());
+                } else {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("SSH tunnel exited with code: {:?}", status.code()),
+                    ));
+                }
+            }
+            Ok(None) => {
+                // Still running, sleep briefly
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => return Err(e),
+        }
     }
+
+    // Ctrl+C received - kill SSH and signal cleanup needed
+    println!("\n🛑 Ctrl+C received, disconnecting...");
+    let _ = child.kill();
+    let _ = child.wait();
+
+    // Return a special error to indicate graceful shutdown
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Interrupted,
+        "User requested disconnect",
+    ))
 }
 
 #[cfg(test)]

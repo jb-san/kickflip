@@ -12,11 +12,38 @@ Based on [Roll your own Ngrok with Nginx, Letsencrypt, and SSH reverse tunnellin
 - **Terminal UI** - Monitor connections and clients in real-time
 - **Docker-ready** - Easy deployment with docker-compose
 
-## Quickstart (Docker Compose)
+## Quick Install
+
+### Install Client (macOS/Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jb-san/kickflip/main/scripts/install-client.sh | bash
+```
+
+This will:
+
+- Download the correct binary for your platform
+- Install to `/usr/local/bin/kickflip-client`
+- Optionally add a `kf` alias
+
+### Install Server (Docker)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jb-san/kickflip/main/scripts/install-server.sh | bash
+```
+
+This will:
+
+- Download docker-compose.yml to `/opt/kickflip`
+- Create config in `/etc/kickflip`
+- Guide you through configuration
+- Optionally add a `kfs` alias for server management
+
+## Manual Setup
 
 ### Prerequisites
 
-- A server with ports 22, 80, and 443 open
+- A server with ports 80, 443, and 2222 open
 - A domain with wildcard DNS pointing to your server:
   - `tunnels.yourdomain.com` → your server IP (A record)
   - `*.tunnels.yourdomain.com` → your server IP (A record or CNAME to above)
@@ -49,6 +76,9 @@ docker compose exec kickflip kickflip-server status
 ### 2. On the client
 
 ```bash
+# Install (or download binary from releases)
+curl -fsSL https://raw.githubusercontent.com/jb-san/kickflip/main/scripts/install-client.sh | bash
+
 # Setup client (generates SSH key)
 kickflip-client setup
 # Enter server URL: https://tunnels.yourdomain.com
@@ -61,7 +91,7 @@ kickflip-client get-pub-key
 
 ```bash
 docker compose exec kickflip kickflip-server add-client \
-  --pubkey "ssh-ed25519 AAAA... user@host" \
+  --pubkey "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHJlP5973NOhXrpInGtqAHzDn2lquBWs59pOFGaep8gk jb@Cortex-2.local" \
   --name "my-laptop"
 ```
 

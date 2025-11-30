@@ -145,6 +145,13 @@ fn main() {
                 .unwrap_or_default();
             cfg.ssh_user = ssh_user;
 
+            let ssh_port_str = Text::new("SSH port on server")
+                .with_initial_value(&cfg.ssh_port.to_string())
+                .with_help_message("The SSH port for tunnel connections (default: 2222)")
+                .prompt()
+                .unwrap_or_else(|_| "2222".to_string());
+            cfg.ssh_port = ssh_port_str.parse().unwrap_or(2222);
+
             if let Err(e) = cfg.save() {
                 eprintln!("❌ Error saving config: {}", e);
             } else {
@@ -161,10 +168,12 @@ fn main() {
             local_port,
         }) => {
             let cfg = config::Config::load();
-            let remote_port = match protocol {
-                Protocol::Http => 80,
-                Protocol::Https => 443,
-                Protocol::Port(p) => p,
+            // Convert protocol enum to string for server
+            // Format: "http", "https", or "port:NNNN" for custom ports
+            let protocol_str = match &protocol {
+                Protocol::Http => "http".to_string(),
+                Protocol::Https => "https".to_string(),
+                Protocol::Port(p) => format!("port:{}", p),
             };
 
             println!("🔗 Connecting to {}", cfg.server_url);
@@ -173,14 +182,17 @@ fn main() {
                 subdomain,
                 extract_domain(&cfg.server_url)
             );
+            println!("   Protocol: {}", protocol);
             println!("   Local port: {}", local_port);
 
+            // remote_port = 0 means server will auto-allocate a high port
             if let Err(e) = networking::connect(
                 &cfg.server_url,
                 &subdomain,
-                remote_port,
+                &protocol_str,
                 local_port,
                 &cfg.ssh_user,
+                cfg.ssh_port,
             ) {
                 eprintln!("❌ Connection failed: {}", e);
                 std::process::exit(1);

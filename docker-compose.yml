@@ -17,11 +17,12 @@ services:
     container_name: kickflip-server
     restart: unless-stopped
 
-    # Network mode: host is required for:
-    # - nginx to bind to ports 80/443
-    # - SSH port forwarding to work correctly
-    # - Reverse tunnels to be accessible
-    network_mode: host
+    # Expose ports for HTTP, HTTPS, SSH tunnels, and API
+    ports:
+      - "80:80"       # HTTP (nginx)
+      - "443:443"     # HTTPS (nginx)
+      - "2222:2222"   # SSH tunnels (container's sshd)
+      - "8080:8080"   # API (daemon)
 
     environment:
       # Path to config file inside container
