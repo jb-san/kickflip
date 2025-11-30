@@ -122,7 +122,8 @@ if [ -n "${SHELL_RC}" ]; then
     echo -e "${YELLOW}Would you like to add a 'kf' alias for kickflip-client?${NC}"
     echo -e "This will add: ${BLUE}alias kf='kickflip-client'${NC} to ${SHELL_RC}"
     echo ""
-    read -p "Add alias? [y/N] " -n 1 -r
+    echo -n "Add alias? [y/N] "
+    read -n 1 -r REPLY < /dev/tty
     echo ""
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then

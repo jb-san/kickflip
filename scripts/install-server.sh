@@ -64,6 +64,7 @@ sudo curl -fsSL -o "${INSTALL_DIR}/docker-compose.yml" "${COMPOSE_URL}"
 success "Downloaded docker-compose.yml"
 
 # Get configuration from user
+# Note: We read from /dev/tty to handle piped input (curl | bash)
 echo ""
 echo -e "${YELLOW}═══════════════════════════════════════${NC}"
 echo -e "${YELLOW}  Server Configuration${NC}"
@@ -72,21 +73,21 @@ echo ""
 
 # Domain
 prompt "Enter your domain (e.g., example.com):"
-read -r DOMAIN
+read -r DOMAIN < /dev/tty
 if [ -z "${DOMAIN}" ]; then
     error "Domain is required"
 fi
 
 # Email for Let's Encrypt
 prompt "Enter your email for Let's Encrypt certificates:"
-read -r EMAIL
+read -r EMAIL < /dev/tty
 if [ -z "${EMAIL}" ]; then
     error "Email is required for SSL certificates"
 fi
 
 # Auto SSL
 prompt "Enable automatic SSL certificates? [Y/n]"
-read -r AUTO_SSL
+read -r AUTO_SSL < /dev/tty
 AUTO_SSL=${AUTO_SSL:-Y}
 if [[ "${AUTO_SSL}" =~ ^[Yy]$ ]]; then
     AUTO_CERT="true"
@@ -138,7 +139,7 @@ esac
 if [ -n "${SHELL_RC}" ]; then
     echo ""
     prompt "Would you like to add a 'kfs' alias for managing the server? [Y/n]"
-    read -r ADD_ALIAS
+    read -r ADD_ALIAS < /dev/tty
     ADD_ALIAS=${ADD_ALIAS:-Y}
     
     if [[ "${ADD_ALIAS}" =~ ^[Yy]$ ]]; then
@@ -172,7 +173,7 @@ echo ""
 
 # Start server?
 prompt "Start the server now? [Y/n]"
-read -r START_NOW
+read -r START_NOW < /dev/tty
 START_NOW=${START_NOW:-Y}
 
 if [[ "${START_NOW}" =~ ^[Yy]$ ]]; then
