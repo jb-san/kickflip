@@ -15,7 +15,7 @@ clap = { workspace = true }
 tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros", "net", "time", "fs", "signal", "io-util"] }
 serde = {workspace = true}
 serde_json = {workspace = true}
-tracing = "0.1.41"
+tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 kickflip-proto = { path = "../proto" }
 uuid = { version = "1.10", features = ["v4"] }
