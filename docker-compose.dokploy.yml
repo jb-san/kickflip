@@ -1,0 +1,63 @@
+# Kickflip on Dokploy
+#
+# Required Dokploy environment variables:
+#   KICKFLIP_DOMAIN=tunnels.example.com
+#   KICKFLIP_ACME_RESOLVER=letsencrypt
+#
+# DNS:
+#   tunnels.example.com   -> Dokploy server IP
+#   *.tunnels.example.com -> Dokploy server IP
+
+services:
+  kickflip:
+    image: ghcr.io/jb-san/kickflip-server:latest
+    restart: unless-stopped
+
+    environment:
+      KICKFLIP_SERVER_CONFIG: /etc/kickflip/kickflip-server.toml
+      KICKFLIP_CLIENTS_DIR: /etc/kickflip/clients.d
+
+    volumes:
+      - ./config:/etc/kickflip
+      - kickflip-letsencrypt:/etc/letsencrypt
+      - kickflip-nginx-sites:/etc/nginx/sites-available
+      - kickflip-nginx-enabled:/etc/nginx/sites-enabled
+      - kickflip-acme-webroot:/var/www/letsencrypt
+
+    expose:
+      - "80"
+      - "8080"
+
+    ports:
+      - "2222:2222/tcp"
+
+    networks:
+      - dokploy-network
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.kickflip.rule=Host(`${KICKFLIP_DOMAIN:-tunnels.example.com}`) || Host(`*.${KICKFLIP_DOMAIN:-tunnels.example.com}`)"
+      - "traefik.http.routers.kickflip.entrypoints=websecure"
+      - "traefik.http.routers.kickflip.tls=true"
+      - "traefik.http.routers.kickflip.tls.certresolver=${KICKFLIP_ACME_RESOLVER:-letsencrypt}"
+      - "traefik.http.routers.kickflip.tls.domains[0].main=${KICKFLIP_DOMAIN:-tunnels.example.com}"
+      - "traefik.http.routers.kickflip.tls.domains[0].sans=*.${KICKFLIP_DOMAIN:-tunnels.example.com}"
+      - "traefik.http.services.kickflip.loadbalancer.server.port=80"
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+networks:
+  dokploy-network:
+    external: true
+
+volumes:
+  kickflip-letsencrypt:
+  kickflip-nginx-sites:
+  kickflip-nginx-enabled:
+  kickflip-acme-webroot:
