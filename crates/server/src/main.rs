@@ -20,7 +20,7 @@ struct Cli {
     verbose: u8,
 
     /// Configuration file path
-    #[arg(short, long, default_value = "config.toml")]
+    #[arg(short, long, default_value = "kickflip-server.toml")]
     config: String,
 
     /// Server port
@@ -32,8 +32,8 @@ struct Cli {
     host: String,
 
     /// Clients directory (allow-list)
-    #[arg(long, default_value = "clients.d")]
-    clients_dir: PathBuf,
+    #[arg(long)]
+    clients_dir: Option<PathBuf>,
 
     /// Daemon control socket path
     #[arg(long, default_value = "/tmp/kickflip.sock")]
@@ -132,8 +132,7 @@ fn main() {
         Some(Commands::Configure) => {
             let cfg = run_configure();
             // Save config to file
-            let path = std::env::var("KICKFLIP_SERVER_CONFIG")
-                .unwrap_or_else(|_| "kickflip-server.toml".into());
+            let path = config_path(&cli);
             match cfg.save_path(&path) {
                 Ok(_) => println!("Saved config to {}", path),
                 Err(e) => eprintln!("Failed to save config: {}", e),
@@ -141,8 +140,7 @@ fn main() {
         }
         Some(Commands::Start) => {
             // Try to load config file if present
-            let path = std::env::var("KICKFLIP_SERVER_CONFIG")
-                .unwrap_or_else(|_| "kickflip-server.toml".into());
+            let path = config_path(&cli);
             let maybe_cfg = ServerConfig::load_path(&path).ok();
             let rp_id;
             let clients_dir;
@@ -173,7 +171,9 @@ fn main() {
                 hsts_max_age = cfg.hsts_max_age;
             } else {
                 rp_id = cli.rp_id;
-                clients_dir = cli.clients_dir.to_string_lossy().to_string();
+                clients_dir = resolve_clients_dir(cli.clients_dir.as_ref(), &cli.config)
+                    .to_string_lossy()
+                    .to_string();
                 nginx_available = cli.nginx_available.to_string_lossy().to_string();
                 nginx_enabled = cli.nginx_enabled.to_string_lossy().to_string();
                 acme_webroot = cli.acme_webroot.to_string_lossy().to_string();
@@ -238,6 +238,7 @@ fn main() {
             }
         },
         Some(Commands::AddClient { file, pubkey, name }) => {
+            let clients_dir = resolve_clients_dir(cli.clients_dir.as_ref(), &cli.config);
             let line = match (file, pubkey) {
                 (Some(path), None) => fs::read_to_string(path).expect("read pubkey file"),
                 (None, Some(s)) => s,
@@ -247,7 +248,7 @@ fn main() {
                 }
             };
             let (_parsed, key_id) = parse_and_fingerprint(&line).expect("invalid ssh public key");
-            ensure_dir(&cli.clients_dir).expect("create clients dir");
+            ensure_dir(&clients_dir).expect("create clients dir");
             let filename = sanitize_filename(&format!("{}.pub", key_id.replace(":", "_")));
             let mut content = line;
             if !content.ends_with('\n') {
@@ -256,7 +257,7 @@ fn main() {
             if let Some(n) = name {
                 content.push_str(&format!("# name: {}\n", n));
             }
-            let out_path = cli.clients_dir.join(filename);
+            let out_path = clients_dir.join(filename);
             fs::write(&out_path, content.clone()).expect("write client key");
             println!("Added client: {} -> {}", key_id, out_path.display());
 
@@ -286,8 +287,9 @@ fn main() {
             }
         }
         Some(Commands::RemoveClient { key_id }) => {
+            let clients_dir = resolve_clients_dir(cli.clients_dir.as_ref(), &cli.config);
             let fname = sanitize_filename(&format!("{}.pub", key_id.replace(":", "_")));
-            let path = cli.clients_dir.join(fname);
+            let path = clients_dir.join(fname);
             if path.exists() {
                 fs::remove_file(&path).expect("remove file");
                 println!("Removed {}", key_id);
@@ -324,28 +326,36 @@ fn main() {
                 }
             }
         }
-        Some(Commands::ListClients) => match fs::read_dir(&cli.clients_dir) {
-            Ok(entries) => {
-                for entry in entries.flatten() {
-                    if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                        if let Ok(text) = fs::read_to_string(entry.path()) {
-                            for line in text.lines() {
-                                let l = line.trim();
-                                if l.is_empty() || l.starts_with('#') {
-                                    continue;
-                                }
-                                if let Ok((_parsed, key_id)) = parse_and_fingerprint(l) {
-                                    println!("{}\t{}", key_id, entry.file_name().to_string_lossy());
+        Some(Commands::ListClients) => {
+            let clients_dir = resolve_clients_dir(cli.clients_dir.as_ref(), &cli.config);
+            match fs::read_dir(&clients_dir) {
+                Ok(entries) => {
+                    for entry in entries.flatten() {
+                        if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                            if let Ok(text) = fs::read_to_string(entry.path()) {
+                                for line in text.lines() {
+                                    let l = line.trim();
+                                    if l.is_empty() || l.starts_with('#') {
+                                        continue;
+                                    }
+                                    if let Ok((_parsed, key_id)) = parse_and_fingerprint(l) {
+                                        println!(
+                                            "{}\t{}",
+                                            key_id,
+                                            entry.file_name().to_string_lossy()
+                                        );
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                Err(_) => println!("(empty) {}", clients_dir.display()),
             }
-            Err(_) => println!("(empty) {}", cli.clients_dir.display()),
-        },
+        }
         Some(Commands::Tui) => {
-            if let Err(e) = tui::run(&cli.socket, &cli.clients_dir) {
+            let clients_dir = resolve_clients_dir(cli.clients_dir.as_ref(), &cli.config);
+            if let Err(e) = tui::run(&cli.socket, &clients_dir) {
                 eprintln!("TUI error: {}", e);
                 std::process::exit(1);
             }
@@ -354,6 +364,47 @@ fn main() {
             println!("No command specified. Use --help for usage information.");
         }
     }
+}
+
+fn config_path(cli: &Cli) -> String {
+    std::env::var("KICKFLIP_SERVER_CONFIG").unwrap_or_else(|_| cli.config.clone())
+}
+
+fn default_clients_dir() -> PathBuf {
+    PathBuf::from("clients.d")
+}
+
+fn resolve_clients_dir(cli_clients_dir: Option<&PathBuf>, cli_config: &str) -> PathBuf {
+    resolve_clients_dir_from_env(
+        cli_clients_dir,
+        cli_config,
+        std::env::var("KICKFLIP_CLIENTS_DIR").ok(),
+        std::env::var("KICKFLIP_SERVER_CONFIG").ok(),
+    )
+}
+
+fn resolve_clients_dir_from_env(
+    cli_clients_dir: Option<&PathBuf>,
+    cli_config: &str,
+    env_clients_dir: Option<String>,
+    env_config_path: Option<String>,
+) -> PathBuf {
+    if let Some(path) = cli_clients_dir {
+        return path.clone();
+    }
+
+    if let Some(path) = env_clients_dir {
+        if !path.trim().is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+
+    let config_path = env_config_path.unwrap_or_else(|| cli_config.into());
+    if let Ok(cfg) = ServerConfig::load_path(config_path) {
+        return cfg.clients_dir;
+    }
+
+    default_clients_dir()
 }
 
 fn unix_socket_request(socket_path: &std::path::Path, data: &[u8]) -> std::io::Result<String> {
@@ -509,5 +560,60 @@ fn run_configure() -> ServerConfig {
         authorized_keys: std::env::var_os("HOME")
             .map(|h| std::path::PathBuf::from(h).join(".ssh/authorized_keys"))
             .unwrap_or_else(|| std::path::PathBuf::from("/root/.ssh/authorized_keys")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn resolve_clients_dir_prefers_cli_value() {
+        let cli_value = PathBuf::from("/cli/clients");
+        let resolved = resolve_clients_dir_from_env(
+            Some(&cli_value),
+            "missing.toml",
+            Some("/env/clients".into()),
+            None,
+        );
+
+        assert_eq!(resolved, PathBuf::from("/cli/clients"));
+    }
+
+    #[test]
+    fn resolve_clients_dir_uses_env_value() {
+        let resolved =
+            resolve_clients_dir_from_env(None, "missing.toml", Some("/env/clients".into()), None);
+
+        assert_eq!(resolved, PathBuf::from("/env/clients"));
+    }
+
+    #[test]
+    fn resolve_clients_dir_uses_config_value() {
+        let dir = tempdir().expect("tempdir");
+        let config_path = dir.path().join("kickflip-server.toml");
+        let clients_dir = dir.path().join("clients.d");
+        let cfg = ServerConfig {
+            clients_dir: clients_dir.clone(),
+            ..ServerConfig::default()
+        };
+        cfg.save_path(&config_path).expect("save config");
+
+        let resolved = resolve_clients_dir_from_env(
+            None,
+            "missing.toml",
+            None,
+            Some(config_path.to_str().expect("utf8 path").into()),
+        );
+
+        assert_eq!(resolved, clients_dir);
+    }
+
+    #[test]
+    fn resolve_clients_dir_falls_back_to_default() {
+        let resolved = resolve_clients_dir_from_env(None, "missing.toml", None, None);
+
+        assert_eq!(resolved, PathBuf::from("clients.d"));
     }
 }
