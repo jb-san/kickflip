@@ -12,6 +12,12 @@ Based on [Roll your own Ngrok with Nginx, Letsencrypt, and SSH reverse tunnellin
 - **Terminal UI** - Monitor connections and clients in real-time
 - **Docker-ready** - Easy deployment with docker-compose
 
+### Deploy on Dokploy
+
+Dokploy already owns host ports `80` and `443` through Traefik. Use the dedicated Dokploy guide instead of the default Compose file:
+
+- [Deploy Kickflip on Dokploy](docs/deploy-dokploy.md)
+
 ## Quick Install
 
 ### Install Client (macOS/Linux)
